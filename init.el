@@ -855,16 +855,16 @@
         (eldoc-mode -1)))))
 
 
-;; (use-package eglot-booster
-;;   :ensure t
-;;   :vc (:url "https://github.com/jdtsmith/eglot-booster" :branch "main")
-;;   :after eglot
-;;   :init (eglot-booster-mode))
+(use-package eglot-booster
+  :ensure nil
+  :load-path (lambda () (locate-user-emacs-file "site-lisp/eglot-booster"))
+  :after eglot
+  :init (eglot-booster-mode))
 
-;; (use-package eglot-x
-;;   :ensure t
-;;   :vc (:url "https://github.com/nemethf/eglot-x" :branch "master")
-;;   :hook (eglot-managed-mode . eglot-x-setup))
+(use-package eglot-x
+  :ensure nil
+  :load-path (lambda () (locate-user-emacs-file "site-lisp/eglot-x"))
+  :hook (eglot-managed-mode . eglot-x-setup))
 
 
 (use-package eldoc
