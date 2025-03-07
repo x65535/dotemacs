@@ -118,7 +118,7 @@
 (mapc
  (lambda (lst)
    (set lst (cons '(width . (text-pixels . 1200)) (symbol-value lst)))
-   (set lst (cons '(height . (text-pixels . 1200)) (symbol-value lst))))
+   (set lst (cons '(height . (text-pixels . 1500)) (symbol-value lst))))
  '(default-frame-alist initial-frame-alist))
 
 (put 'mode-line-format 'initial-value (default-toplevel-value 'mode-line-format))
@@ -204,7 +204,7 @@ unreadable. Returns the names of envvars that were changed."
 
 (+load-envvars-file (expand-file-name "env" user-emacs-directory))
 
-(defconst dohna-font-pixelsize 20)
+(defconst dohna-font-pixelsize 21)
 (defconst dohna-fonts '((mono . "Donut")
                         (sans . "Donut")
                         (serif . "Donut")
@@ -277,6 +277,7 @@ unreadable. Returns the names of envvars that were changed."
                                          ,@modus-themes-preset-overrides-faint)
  modus-operandi-tinted-palette-overrides '((bg-region bg-ochre)
                                            (cursor red-faint))
+ modus-vivendi-palette-overrides '((cursor magenta))
  modus-vivendi-tinted-palette-overrides '((keyword magenta-warmer)))
 
 

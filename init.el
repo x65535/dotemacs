@@ -254,10 +254,9 @@
       completions-header-format nil
       completions-detailed t
       completion-show-inline-help nil
-      completions-max-height 6
+      completions-max-height 8
       minibuffer-completion-auto-choose t
       minibuffer-visible-completions t
-      backward-delete-char-untabify-method 'hungry
       require-final-newline t
       copy-region-blink-delay 0
       delete-pair-blink-delay 0
@@ -284,6 +283,11 @@
  sentence-end "\\([。！？]\\|……\\|[.?!][]\"')}]*\\($\\|[ \t]\\)\\)[ \t\n]*"
  sentence-end-double-space nil)
 
+(use-package diminish :ensure t)
+
+(use-package abbrev
+  :diminish abbrev-mode)
+
 (use-package completion-preview
   :diminish completion-preview-mode
   :hook ((prog-mode conf-mode text-mode) . completion-preview-mode)
@@ -292,8 +296,6 @@
               ("M-p" . completion-preview-prev-candidate)
               ("<control-bracketleft>" . +escape)
               ("<escape>" . +escape)))
-
-(use-package diminish :ensure t)
 
 (use-package subword
   :diminish subword-mode
@@ -460,6 +462,22 @@
   :config
   (setq electric-pair-inhibit-predicate 'electric-pair-default-inhibit))
 
+(use-package puni
+  :ensure t
+  :bind (:map puni-mode-map
+              ([remap transpose-sexps] . puni-transpose)
+              ("C-<" . puni-slurp-backward)
+              ("C->" . puni-slurp-forward)
+              ("C-{" . puni-barf-backward)
+              ("C-}" . puni-barf-forward)
+              ("C-|" . puni-split)
+              ("M-r" . puni-raise)
+              ("M-R" . puni-splice))
+  :init
+  (setq puni-confirm-when-delete-unbalanced-active-region nil)
+  (puni-global-mode
+   (add-hook 'term-mode-hook #'puni-disable-puni-mode)))
+
 (use-package winner
   :commands (winner-undo winner-redo)
   :init
@@ -479,9 +497,7 @@
   ([remap describe-key] . helpful-key)
   ([remap describe-command] . helpful-command)
   ([remap describe-symbol] . helpful-symbol)
-  ("C-c C-d" . helpful-at-point)
-  :config
-  (setq helpful-max-buffers 1))
+  ("C-c C-d" . helpful-at-point))
 
 (use-package popper
   :ensure t
@@ -773,7 +789,7 @@
   :hook (after-init . beginend-global-mode)
   :config
   (dolist (mode (cons 'beginend-global-mode (mapcar #'cdr beginend-modes)))
-          (diminish mode)))
+    (diminish mode)))
 
 (use-package treesit
   :when (treesit-available-p)
@@ -1000,10 +1016,12 @@
 (use-package eglot
   :hook ((c-mode c++-mode rust-mode python-mode java-mode c-ts-mode c++-ts-mode rust-ts-mode python-ts-mode) . eglot-ensure)
   :custom-face (eglot-highlight-symbol-face ((t (:underline t))))
-  :bind (:map eglot-mode-map
-              ("M-<return>" . eglot-code-actions)
-              ("M-/" . eglot-find-typeDefinition)
-              ("M-?" . xref-find-references))
+  :bind ( :map eglot-mode-map
+          ("M-<return>" . eglot-code-actions)
+          ("M-/" . eglot-find-typeDefinition)
+          ("M-?" . xref-find-references)
+          :map local-code-map
+          ("C-a" . eglot-code-actions))
   :config
   (setq eglot-events-buffer-config '(:size 0 :format full)
         eglot-events-buffer-size 0
@@ -1087,15 +1105,14 @@
       (when (eglot-managed-p)
         (eldoc-mode -1)))))
 
-
 (use-package eglot-booster
+  :if (executable-find "emacs-lsp-booster")
   :ensure nil
   :load-path (lambda () (locate-user-emacs-file "site-lisp/eglot-booster"))
   :after eglot
   :init (eglot-booster-mode))
 
 (use-package eglot-x
-  :ensure nil
   :load-path (lambda () (locate-user-emacs-file "site-lisp/eglot-x"))
   :hook (eglot-managed-mode . eglot-x-setup))
 
@@ -1323,6 +1340,7 @@
 
 (use-package abridge-diff
   :ensure t
+  :diminish abridge-diff-mode
   :after magit ;; optional, if you'd like to use with magit
   :init (abridge-diff-mode 1))
 
@@ -1391,10 +1409,6 @@
   (interactive (list 'interactive))
   (let ((inhibit-quit t))
     (cond
-     ;; hide completion-preview
-     ((and (boundp 'completion-preview-active-mode)
-           completion-preview-active-mode)
-      (completion-preview-hide))
      ;; hide *Completions* window
      ((window-live-p (get-buffer-window "*Completions*" 0))
       (minibuffer-hide-completions))
@@ -1405,19 +1419,28 @@
       (abort-recursive-edit))
      ;; don't abort macros
      (executing-kbd-macro nil)
+     ;; exit insert mode
+     ((meow-insert-mode-p) (meow-insert-exit))
+     ;; remove isearch highlight overlays
+     (isearch-lazy-highlight-overlays (lazy-highlight-cleanup t))
      ;; Back to the default
      ((unwind-protect
           (progn
+            ;; hide completion-preview
+            (when (and (boundp 'completion-preview-active-mode)
+                       completion-preview-active-mode)
+              (completion-preview-hide))
+            ;; in case of defining macro
             (meow-insert-exit)
             (keyboard-quit))
         (when interactive
           (setq this-command 'keyboard-quit)))))))
 
-(defun +kill-word (arg)
-  (interactive "p")
-  (kill-region
+(defun +delete-word (&optional dir)
+  (interactive)
+  (delete-region
    (point)
-   (let* ((forward (> arg 0))
+   (let* ((forward (> dir 0))
           (peek-ch (if forward (char-after) (char-before)))
           (move-ptr-fn (if forward 're-search-forward
                          're-search-backward))
@@ -1435,15 +1458,56 @@
          (if forward (point-max) (point-min)))))
      (point))))
 
-(defun +backward-kill-word (arg)
-  (interactive "p")
-  (+kill-word (- arg)))
+(defun +backward-delete-word ()
+  (interactive)
+  (+delete-word -1))
 
-(define-key global-map (kbd "C--") #'text-scale-decrease)
-(define-key global-map (kbd "C-=") #'text-scale-increase)
-(define-key global-map (kbd "C-<backspace>") #'+backward-kill-word)
-(define-key global-map (kbd "C-<delete>") #'+kill-word)
-(define-key input-decode-map (kbd "C-[") [control-bracketleft])
+(defun +format-buffer ()
+  ;; TODO add apheleia
+  (interactive)
+  (if (and (fboundp 'eglot-managed-p) (eglot-managed-p))
+      (eglot-format-buffer)
+    (save-excursion
+      (indent-region (point-min) (point-max))
+      (delete-trailing-whitespace))))
+
+(defvar local-code-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "f") #'+format-buffer)
+    map))
+(defalias 'local-code-map local-code-map)
+
+(use-package emacs
+  :bind
+  (:map global-map
+   ("C--" . text-scale-decrease)
+   ("C-=" . text-scale-increase)
+   ("C-<backspace>" . +backward-delete-word)
+   ("C-<delete>" . +delete-word)
+   ("C-x q" . save-buffers-kill-terminal)
+   :map input-decode-map
+   ("C-[" . [control-bracketleft])
+   :map ctl-x-map
+   ("C-c" . local-code-map))
+  :init
+  (global-unset-key (kbd "C-z")))
+
+(defun +wrap-single-quote-or-repeat (repeat-arg)
+  (interactive "P")
+  (if (region-active-p)
+      (puni-wrap-next-sexps 'region "'" "'")
+    (repeat repeat-arg)))
+
+(defun +wrap-double-quote ()
+  (interactive)
+  (when (region-active-p)
+    (puni-wrap-next-sexps 'region "\"" "\"")))
+
+(defun +wrap-square-or-meow-beginning-of-thing ()
+  (interactive)
+  (if (region-active-p)
+      (puni-wrap-square)
+    (call-interactively 'meow-beginning-of-thing)))
 
 ;; [meow] Modal editing
 (use-package meow
@@ -1469,7 +1533,7 @@
   (define-key meow-motion-state-keymap [control-bracketleft] #'+escape)
   (define-key meow-keypad-state-keymap [control-bracketleft] #'+escape)
   (define-key meow-beacon-state-keymap [control-bracketleft] #'+escape)
-  
+
   ;; [motion]
   (meow-motion-overwrite-define-key
    '("h" . meow-left)
@@ -1513,8 +1577,11 @@
    '(";" . meow-reverse)
    '("," . meow-inner-of-thing)
    '("." . meow-bounds-of-thing)
-   '("[" . meow-beginning-of-thing)
+   '("[" . +wrap-square-or-meow-beginning-of-thing)
    '("]" . meow-end-of-thing)
+   '("{" . puni-wrap-curly)
+   '("(" . puni-wrap-round)
+   '("<" . puni-wrap-angle)
    '("a" . meow-append)
    '("A" . meow-open-below)
    '("b" . meow-back-word)
@@ -1550,7 +1617,8 @@
    '("t" . meow-till)
    '("u" . meow-undo)
    '("U" . meow-undo-in-selection)
-   '("v" . meow-visit)
+   '("v" . puni-expand-region)
+   '("V" . puni-contract-region)
    '("w" . meow-mark-word)
    '("W" . meow-mark-symbol)
    '("x" . meow-line)
@@ -1558,7 +1626,9 @@
    '("y" . meow-save)
    '("Y" . meow-sync-grab)
    '("z" . meow-pop-selection)
-   '("'" . repeat)
+   '("/" . meow-visit)
+   '("'" . +wrap-single-quote-or-repeat)
+   '("\"" . +wrap-double-quote)
    '("<escape>" . +escape))
 
   (dolist
@@ -1586,7 +1656,7 @@
 
 (use-package eat
   :ensure t
-  :diminish eat-shell-mode
+  :diminish eat-eshell-mode
   :hook
   (eshell-load . eat-eshell-mode)
   (eshell-load . eat-eshell-visual-command-mode)
