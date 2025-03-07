@@ -300,14 +300,14 @@
   :hook ((prog-mode minibuffer-setup) . subword-mode))
 
 (use-package minibuffer
-  :hook (minibuffer-setup . cursor-intangible-mode)
+  :hook
+  (after-init . minibuffer-depth-indicate-mode)
+  (after-init . minibuffer-electric-default-mode)
+  (minibuffer-setup . cursor-intangible-mode)
   :bind (:map minibuffer-local-map
               ("C-n" . minibuffer-next-completion)
               ("C-p" . minibuffer-previous-completion)
-              ("<control-bracketleft>" . +escape))
-  :config
-  (setq minibuffer-depth-indicate-mode t
-        minibuffer-electric-default-mode t))
+              ("<control-bracketleft>" . +escape)))
 
 (use-package isearch
   :diminish isearch-mode
