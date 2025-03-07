@@ -8,6 +8,206 @@
         ("gnu"    . "https://elpa.gnu.org/packages/")
         ("nongnu" . "https://elpa.nongnu.org/nongnu/")))
 
+(package-initialize)
+
+(defmacro add-hook! (hooks &rest rest)
+  "A convenience macro for adding N functions to M hooks.
+
+      This macro accepts, in order:
+
+        1. The mode(s) or hook(s) to add to. This is either an unquoted mode, an
+           unquoted list of modes, a quoted hook variable or a quoted list of hook
+           variables.
+        2. Optional properties :local, :append, and/or :depth [N], which will make the
+           hook buffer-local or append to the list of hooks (respectively),
+        3. The function(s) to be added: this can be a quoted function, a quoted list
+           thereof, a list of `defun' or `cl-defun' forms, or arbitrary forms (will
+           implicitly be wrapped in a lambda).
+
+      \(fn HOOKS [:append :local [:depth N]] FUNCTIONS-OR-FORMS...)"
+  (declare (indent (lambda (indent-point state)
+                     (goto-char indent-point)
+                     (when (looking-at-p "\\s-*(")
+                       (lisp-indent-defform state indent-point))))
+           (debug t))
+  (let* ((hook-forms (if (listp hooks) hooks (list hooks)))
+         (func-forms ())
+         (defn-forms ())
+         append-p local-p remove-p depth)
+    (while (keywordp (car rest))
+      (pcase (pop rest)
+        (:append (setq append-p t))
+        (:depth  (setq depth (pop rest)))
+        (:local  (setq local-p t))
+        (:remove (setq remove-p t))))
+    (while rest
+      (let* ((next (pop rest))
+             (first (car-safe next)))
+        (push (cond ((memq first '(function nil))
+                     next)
+                    ((eq first 'quote)
+                     (let ((quoted (cadr next)))
+                       (if (atom quoted)
+                           next
+                         (when (cdr quoted)
+                           (setq rest (cons (list first (cdr quoted)) rest)))
+                         (list first (car quoted)))))
+                    ((memq first '(defun cl-defun))
+                     (push next defn-forms)
+                     (list 'function (cadr next)))
+                    ((prog1 `(lambda (&rest _) ,@(cons next rest))
+                       (setq rest nil))))
+              func-forms)))
+    `(progn
+       ,@defn-forms
+       (dolist (hook ',(nreverse hook-forms))
+         (dolist (func (list ,@func-forms))
+           ,(if remove-p
+                `(remove-hook hook func ,local-p)
+              `(add-hook hook func ,(or depth append-p) ,local-p)))))))
+
+(defmacro remove-hook! (hooks &rest rest)
+  "A convenience macro for removing N functions from M hooks.
+
+      Takes the same arguments as `add-hook!'.
+
+      If N and M = 1, there's no benefit to using this macro over `remove-hook'.
+
+      \(fn HOOKS [:append :local] FUNCTIONS)"
+  (declare (indent defun) (debug t))
+  `(add-hook! ,hooks :remove ,@rest))
+
+(defmacro defadvice! (symbol arglist &optional docstring &rest body)
+  "Define an advice called SYMBOL and add it to PLACES.
+
+      ARGLIST is as in `defun'. WHERE is a keyword as passed to `advice-add', and
+      PLACE is the function to which to add the advice, like in `advice-add'.
+      DOCSTRING and BODY are as in `defun'.
+
+      \(fn SYMBOL ARGLIST &optional DOCSTRING &rest [WHERE PLACES...] BODY\)"
+  (declare (doc-string 3) (indent defun))
+  (unless (stringp docstring)
+    (push docstring body)
+    (setq docstring nil))
+  (let (where-alist)
+    (while (keywordp (car body))
+      (push `(cons ,(pop body) (ensure-list ,(pop body)))
+            where-alist))
+    `(progn
+       (defun ,symbol ,arglist ,docstring ,@body)
+       (dolist (targets (list ,@(nreverse where-alist)))
+         (dolist (target (cdr targets))
+           (advice-add target (car targets) #',symbol))))))
+
+(defmacro undefadvice! (symbol _arglist &optional docstring &rest body)
+  "Undefine an advice called SYMBOL.
+
+      This has the same signature as `defadvice!' an exists as an easy undefiner when
+      testing advice (when combined with `rotate-text').
+
+      \(fn SYMBOL ARGLIST &optional DOCSTRING &rest [WHERE PLACES...] BODY\)"
+  (declare (doc-string 3) (indent defun))
+  (let (where-alist)
+    (unless (stringp docstring)
+      (push docstring body))
+    (while (keywordp (car body))
+      (push `(cons ,(pop body) (ensure-list ,(pop body)))
+            where-alist))
+    `(dolist (targets (list ,@(nreverse where-alist)))
+       (dolist (target (cdr targets))
+         (advice-remove target #',symbol)))))
+
+(defmacro +advice-pp-to-prin1! (&rest body)
+  "Define an advice called SYMBOL that map `pp' to `prin1' when called.
+    PLACE is the function to which to add the advice, like in `advice-add'.
+
+    \(fn SYMBOL &rest [PLACES...]\)"
+  `(progn
+     (dolist (target (list ,@body))
+       (advice-add target :around #'+call-fn-with-pp-to-prin1))))
+
+(defmacro defun-call! (symbol args &rest body)
+  "Define a function and optionally apply it with specified arguments.
+
+    \(fn SYMBOL ARGS &optional [DOCSTRING] &optional [:call-with APPLY_ARGS] BODY\)"
+  (declare (indent defun))
+  (let* ((docstring (if (stringp (car body)) (pop body)))
+         (apply-body (if (eq :call-with (car body))
+                         (progn
+                           (cl-assert (eq (pop body) :call-with))
+                           (pop body))
+                       nil)))
+    `(progn
+       (defun ,symbol ,args
+         ,@(if docstring
+               (cons docstring body)
+             body))
+       (apply ',symbol
+              ,(if (listp apply-body)
+                   `(list ,@apply-body)
+                 `(list ,apply-body))))))
+
+
+(defmacro appendq! (sym &rest lists)
+  "Append LISTS to SYM in place."
+  `(setq ,sym (append ,sym ,@lists)))
+
+(defmacro setq! (&rest settings)
+  "A more sensible `setopt' for setting customizable variables.
+
+  This can be used as a drop-in replacement for `setq' and *should* be used
+  instead of `setopt'. Unlike `setq', this triggers custom setters on variables.
+  Unlike `setopt', this won't needlessly pull in dependencies."
+  (macroexp-progn
+   (cl-loop for (var val) on settings by 'cddr
+            collect `(funcall (or (get ',var 'custom-set) #'set-default-toplevel-value)
+                              ',var ,val))))
+
+(defmacro delq! (elt list &optional fetcher)
+  "`delq' ELT from LIST in-place.
+
+  If FETCHER is a function, ELT is used as the key in LIST (an alist)."
+  `(setq ,list (delq ,(if fetcher
+                          `(funcall ,fetcher ,elt ,list)
+                        elt)
+                     ,list)))
+
+(defmacro pushnew! (place &rest values)
+  "Push VALUES sequentially into PLACE, if they aren't already present.
+  This is a variadic `cl-pushnew'."
+  (let ((var (make-symbol "result")))
+    `(dolist (,var (list ,@values) (with-no-warnings ,place))
+       (cl-pushnew ,var ,place :test #'equal))))
+
+(defmacro prependq! (sym &rest lists)
+  "Prepend LISTS to SYM in place."
+  `(setq ,sym (append ,@lists ,sym)))
+
+(defun +call-fn-with-pp-to-prin1 (fn &rest args)
+  "Call FN with ARGS, map `pp' to `prin1' when called."
+  (cl-letf (((symbol-function #'pp) #'prin1)
+            ((symbol-function #'pp-to-string) #'prin1-to-string))
+    (apply fn args)))
+
+(defun +unfill-region (start end)
+  "Replace newline chars in region from START to END by single spaces.
+    This command does the inverse of `fill-region'."
+  (interactive "r")
+  (let ((fill-column most-positive-fixnum))
+    (fill-region start end)))
+
+(defun +temp-buffer-p (buffer)
+  "Return t if BUFFER is temporary."
+  (string-match-p "^ " (buffer-name buffer)))
+
+(defun +num-to-sup-string (num)
+  "Convert NUM to a small string.
+
+    Example: 12 -> \"¹²\""
+  (let ((str (number-to-string num))
+        (superscripts "⁰¹²³⁴⁵⁶⁷⁸⁹"))
+    (mapconcat (lambda (c) (char-to-string (elt superscripts (- c ?0)))) str)))
+
 (setq use-short-answers t
       y-or-n-p-use-read-key t
       read-char-choice-use-read-key t
@@ -54,7 +254,7 @@
       completions-header-format nil
       completions-detailed t
       completion-show-inline-help nil
-      completion-max-height 6
+      completions-max-height 6
       minibuffer-completion-auto-choose t
       minibuffer-visible-completions t
       backward-delete-char-untabify-method 'hungry
@@ -84,21 +284,33 @@
  sentence-end "\\([。！？]\\|……\\|[.?!][]\"')}]*\\($\\|[ \t]\\)\\)[ \t\n]*"
  sentence-end-double-space nil)
 
-(add-hook 'after-init-hook #'completion-preview-mode)
+(use-package completion-preview
+  :diminish completion-preview-mode
+  :hook ((prog-mode conf-mode text-mode) . completion-preview-mode)
+  :bind (:map completion-preview-active-mode-map
+              ("M-n" . completion-preview-next-candidate)
+              ("M-p" . completion-preview-prev-candidate)
+              ("<control-bracketleft>" . +escape)
+              ("<escape>" . +escape)))
+
+(use-package diminish :ensure t)
 
 (use-package subword
+  :diminish subword-mode
   :hook ((prog-mode minibuffer-setup) . subword-mode))
 
 (use-package minibuffer
   :hook (minibuffer-setup . cursor-intangible-mode)
   :bind (:map minibuffer-local-map
               ("C-n" . minibuffer-next-completion)
-              ("C-p" . minibuffer-previous-completion))
+              ("C-p" . minibuffer-previous-completion)
+              ("<control-bracketleft>" . +escape))
   :config
   (setq minibuffer-depth-indicate-mode t
         minibuffer-electric-default-mode t))
 
 (use-package isearch
+  :diminish isearch-mode
   :bind (:map isearch-mode-map
               ([remap isearch-delete-char] . isearch-del-char))
   :config
@@ -122,6 +334,7 @@
 	  (apply fn args)))
 
 (use-package autorevert
+  :diminish auto-revert-mode
   :hook (after-init . global-auto-revert-mode)
   :config
   (setq revert-without-query '(".")))
@@ -139,6 +352,7 @@
         comint-history-isearch 'dwim))
 
 (use-package so-long
+  :diminish so-long-mode
   :hook (after-init . global-so-long-mode)
   :config
   (if (fboundp 'buffer-line-statistics)
@@ -254,8 +468,20 @@
   :config
   (setq winner-boring-buffers
         '("*Completions*" "*Compile-Log*" "*inferior-lisp*" "*Fuzzy Completions*"
-          "*Apropos*" "*Help*" "*cvs*" "*Buffer List*" "*Ibuffer*"
+          "*Apropos*" "*Help*" "*helpful*" "*cvs*" "*Buffer List*" "*Ibuffer*"
           "*esh command on file*")))
+
+(use-package helpful
+  :ensure t
+  :bind
+  ([remap describe-function] . helpful-callable)
+  ([remap describe-variable] . helpful-variable)
+  ([remap describe-key] . helpful-key)
+  ([remap describe-command] . helpful-command)
+  ([remap describe-symbol] . helpful-symbol)
+  ("C-c C-d" . helpful-at-point)
+  :config
+  (setq helpful-max-buffers 1))
 
 (use-package popper
   :ensure t
@@ -283,6 +509,7 @@
           compilation-mode
           ibuffer-mode
           help-mode
+          helpful-mode
           tabulated-list-mode
           Buffer-menu-mode
           flymake-diagnostics-buffer-mode
@@ -324,6 +551,8 @@
   (defadvice! +popper-close-window-hack (&rest _)
     :before #'keyboard-quit
     (when (and (not (region-active-p))
+               (not (meow-insert-mode-p))
+               (not (meow-beacon-mode-p))
                popper-open-popup-alist)
       (let ((window (caar popper-open-popup-alist)))
         (when (window-live-p window)
@@ -485,11 +714,11 @@
 
   (defsubst +mode-line-window-name ()
     (char-to-string
-     (+ (if (mode-line-window-selected-p)
-            #x2775
-          #x245f)
-        (string-to-number
-         (window-parameter (selected-window) 'ace-window-path)))))
+     (+  (if (mode-line-window-selected-p)
+             #x2775
+           #x245f)
+         (string-to-number
+          (window-parameter (selected-window) 'ace-window-path)))))
 
   (setq-default mode-line-format
                 '("%e" mode-line-front-space
@@ -535,13 +764,16 @@
 
 
 (use-package mwim
- :ensure t
- :bind (([remap move-beginning-of-line] . mwim-beginning-of-code-or-line)
-        ([remap move-end-of-line] . mwim-end-of-code-or-line)))
+  :ensure t
+  :bind (([remap move-beginning-of-line] . mwim-beginning-of-code-or-line)
+         ([remap move-end-of-line] . mwim-end-of-code-or-line)))
 
 (use-package beginend
- :ensure t
- :hook (after-init . beginend-global-mode))
+  :ensure t
+  :hook (after-init . beginend-global-mode)
+  :config
+  (dolist (mode (cons 'beginend-global-mode (mapcar #'cdr beginend-modes)))
+          (diminish mode)))
 
 (use-package treesit
   :when (treesit-available-p)
@@ -584,6 +816,7 @@
 
 (use-package ws-butler
   :ensure t
+  :diminish ws-butler-mode
   :hook (after-init . ws-butler-global-mode)
   :config
   (pushnew! ws-butler-global-exempt-modes
@@ -868,6 +1101,7 @@
 
 
 (use-package eldoc
+  :diminish eldoc-mode
   :bind (("C-h h" . eldoc))
   :config
   (setq eldoc-echo-area-display-truncation-message t
@@ -1157,7 +1391,11 @@
   (interactive (list 'interactive))
   (let ((inhibit-quit t))
     (cond
-     ;; hide completions
+     ;; hide completion-preview
+     ((and (boundp 'completion-preview-active-mode)
+           completion-preview-active-mode)
+      (completion-preview-hide))
+     ;; hide *Completions* window
      ((window-live-p (get-buffer-window "*Completions*" 0))
       (minibuffer-hide-completions))
      ;; quit the minibuffer if open.
@@ -1175,16 +1413,49 @@
         (when interactive
           (setq this-command 'keyboard-quit)))))))
 
+(defun +kill-word (arg)
+  (interactive "p")
+  (kill-region
+   (point)
+   (let* ((forward (> arg 0))
+          (peek-ch (if forward (char-after) (char-before)))
+          (move-ptr-fn (if forward 're-search-forward
+                         're-search-backward))
+          (move-back-fn (if forward 'left-char 'right-char)))
+     (condition-case nil
+         (progn
+           (pcase (char-to-string peek-ch)
+             ("\n" (funcall move-ptr-fn "[^\n]"))
+             ((rx space) (funcall move-ptr-fn "[^[:space:]]\\|[\n]"))
+             ((rx (any "$" "_" alnum)) (funcall move-ptr-fn "[^$_[:alnum:]]"))
+             ((rx punct) (funcall move-ptr-fn "[$_[:alnum:][:space:]]")))
+           (funcall move-back-fn))
+       (search-failed
+        (goto-char
+         (if forward (point-max) (point-min)))))
+     (point))))
+
+(defun +backward-kill-word (arg)
+  (interactive "p")
+  (+kill-word (- arg)))
+
 (define-key global-map (kbd "C--") #'text-scale-decrease)
 (define-key global-map (kbd "C-=") #'text-scale-increase)
+(define-key global-map (kbd "C-<backspace>") #'+backward-kill-word)
+(define-key global-map (kbd "C-<delete>") #'+kill-word)
 (define-key input-decode-map (kbd "C-[") [control-bracketleft])
-(define-key minibuffer-mode-map [control-bracketleft] #'+escape)
 
 ;; [meow] Modal editing
 (use-package meow
   :ensure t
   :hook (emacs-startup . meow-global-mode)
   :demand t
+  :diminish
+  meow-normal-mode
+  meow-motion-mode
+  meow-insert-mode
+  meow-keypad-mode
+  meow-beacon-mode
   :config
   (setq meow-expand-exclude-mode-list nil
         meow-expand-hint-remove-delay 4.0)
@@ -1194,6 +1465,8 @@
                                                (insert . "I")
                                                (beacon . "B")))
   (define-key meow-insert-state-keymap [control-bracketleft] #'+escape)
+  (define-key meow-normal-state-keymap [control-bracketleft] #'+escape)
+  (define-key meow-motion-state-keymap [control-bracketleft] #'+escape)
   (define-key meow-keypad-state-keymap [control-bracketleft] #'+escape)
   (define-key meow-beacon-state-keymap [control-bracketleft] #'+escape)
   
@@ -1306,3 +1579,16 @@
          (vterm-mode . insert)
          (help-mode . normal)))
     (add-to-list 'meow-mode-state-list state)))
+
+(use-package eshell
+  :config
+  (setq eshell-banner-message ""))
+
+(use-package eat
+  :ensure t
+  :diminish eat-shell-mode
+  :hook
+  (eshell-load . eat-eshell-mode)
+  (eshell-load . eat-eshell-visual-command-mode)
+  :config
+  (setq eat-kill-buffer-on-exit t))

@@ -113,6 +113,14 @@
 (when (featurep 'ns)
   (push '(ns-transparent-titlebar . t) default-frame-alist))
 (advice-add #'tool-bar-setup :override #'ignore)
+(put 'quit 'error-message "")
+
+(mapc
+ (lambda (lst)
+   (set lst (cons '(width . (text-pixels . 1200)) (symbol-value lst)))
+   (set lst (cons '(height . (text-pixels . 1200)) (symbol-value lst))))
+ '(default-frame-alist initial-frame-alist))
+
 (put 'mode-line-format 'initial-value (default-toplevel-value 'mode-line-format))
 (setq-default mode-line-format nil)
 (dolist (buf (buffer-list))
@@ -143,41 +151,23 @@
                         'vertical-border
                         (make-glyph-code ?│))
 (define-fringe-bitmap 'right-curly-arrow
-  [#b00110000
+  [#b00000000
+   #b00000110
+   #b00001100
+   #b00011000
    #b00110000
-   #b00000000
-   #b00110000
-   #b00110000
-   #b00000000
-   #b00110000
-   #b00110000])
+   #b00011000
+   #b00001100
+   #b00000110])
 (define-fringe-bitmap 'left-curly-arrow
-  [#b00110000
-   #b00110000
-   #b00000000
-   #b00110000
-   #b00110000
-   #b00000000
-   #b00110000
-   #b00110000])
-(define-fringe-bitmap 'right-arrow
   [#b00000000
-   #b00000000
-   #b00001110
-   #b00001110
-   #b00001110
-   #b00000000
-   #b00000000
-   #b00000000])
-(define-fringe-bitmap 'left-arrow
-  [#b00000000
-   #b00000000
-   #b00000000
-   #b01110000
-   #b01110000
-   #b01110000
-   #b00000000
-   #b00000000])
+   #b01100000
+   #b00110000
+   #b00011000
+   #b00001100
+   #b00011000
+   #b00110000
+   #b01100000])
 
 (defun +gen-envvars-file ()
   (interactive)
@@ -214,7 +204,7 @@ unreadable. Returns the names of envvars that were changed."
 
 (+load-envvars-file (expand-file-name "env" user-emacs-directory))
 
-(defconst dohna-font-pixelsize 16)
+(defconst dohna-font-pixelsize 20)
 (defconst dohna-fonts '((mono . "Donut")
                         (sans . "Donut")
                         (serif . "Donut")
@@ -307,201 +297,3 @@ unreadable. Returns the names of envvars that were changed."
 
 (add-hook 'enable-theme-functions #'dohna-tweak-theme-faces)
 (load-theme 'modus-vivendi)
-
-(defmacro add-hook! (hooks &rest rest)
-  "A convenience macro for adding N functions to M hooks.
-
-      This macro accepts, in order:
-
-        1. The mode(s) or hook(s) to add to. This is either an unquoted mode, an
-           unquoted list of modes, a quoted hook variable or a quoted list of hook
-           variables.
-        2. Optional properties :local, :append, and/or :depth [N], which will make the
-           hook buffer-local or append to the list of hooks (respectively),
-        3. The function(s) to be added: this can be a quoted function, a quoted list
-           thereof, a list of `defun' or `cl-defun' forms, or arbitrary forms (will
-           implicitly be wrapped in a lambda).
-
-      \(fn HOOKS [:append :local [:depth N]] FUNCTIONS-OR-FORMS...)"
-  (declare (indent (lambda (indent-point state)
-                     (goto-char indent-point)
-                     (when (looking-at-p "\\s-*(")
-                       (lisp-indent-defform state indent-point))))
-           (debug t))
-  (let* ((hook-forms (if (listp hooks) hooks (list hooks)))
-         (func-forms ())
-         (defn-forms ())
-         append-p local-p remove-p depth)
-    (while (keywordp (car rest))
-      (pcase (pop rest)
-        (:append (setq append-p t))
-        (:depth  (setq depth (pop rest)))
-        (:local  (setq local-p t))
-        (:remove (setq remove-p t))))
-    (while rest
-      (let* ((next (pop rest))
-             (first (car-safe next)))
-        (push (cond ((memq first '(function nil))
-                     next)
-                    ((eq first 'quote)
-                     (let ((quoted (cadr next)))
-                       (if (atom quoted)
-                           next
-                         (when (cdr quoted)
-                           (setq rest (cons (list first (cdr quoted)) rest)))
-                         (list first (car quoted)))))
-                    ((memq first '(defun cl-defun))
-                     (push next defn-forms)
-                     (list 'function (cadr next)))
-                    ((prog1 `(lambda (&rest _) ,@(cons next rest))
-                       (setq rest nil))))
-              func-forms)))
-    `(progn
-       ,@defn-forms
-       (dolist (hook ',(nreverse hook-forms))
-         (dolist (func (list ,@func-forms))
-           ,(if remove-p
-                `(remove-hook hook func ,local-p)
-              `(add-hook hook func ,(or depth append-p) ,local-p)))))))
-
-(defmacro remove-hook! (hooks &rest rest)
-  "A convenience macro for removing N functions from M hooks.
-
-      Takes the same arguments as `add-hook!'.
-
-      If N and M = 1, there's no benefit to using this macro over `remove-hook'.
-
-      \(fn HOOKS [:append :local] FUNCTIONS)"
-  (declare (indent defun) (debug t))
-  `(add-hook! ,hooks :remove ,@rest))
-
-(defmacro defadvice! (symbol arglist &optional docstring &rest body)
-  "Define an advice called SYMBOL and add it to PLACES.
-
-      ARGLIST is as in `defun'. WHERE is a keyword as passed to `advice-add', and
-      PLACE is the function to which to add the advice, like in `advice-add'.
-      DOCSTRING and BODY are as in `defun'.
-
-      \(fn SYMBOL ARGLIST &optional DOCSTRING &rest [WHERE PLACES...] BODY\)"
-  (declare (doc-string 3) (indent defun))
-  (unless (stringp docstring)
-    (push docstring body)
-    (setq docstring nil))
-  (let (where-alist)
-    (while (keywordp (car body))
-      (push `(cons ,(pop body) (ensure-list ,(pop body)))
-            where-alist))
-    `(progn
-       (defun ,symbol ,arglist ,docstring ,@body)
-       (dolist (targets (list ,@(nreverse where-alist)))
-         (dolist (target (cdr targets))
-           (advice-add target (car targets) #',symbol))))))
-
-(defmacro undefadvice! (symbol _arglist &optional docstring &rest body)
-  "Undefine an advice called SYMBOL.
-
-      This has the same signature as `defadvice!' an exists as an easy undefiner when
-      testing advice (when combined with `rotate-text').
-
-      \(fn SYMBOL ARGLIST &optional DOCSTRING &rest [WHERE PLACES...] BODY\)"
-  (declare (doc-string 3) (indent defun))
-  (let (where-alist)
-    (unless (stringp docstring)
-      (push docstring body))
-    (while (keywordp (car body))
-      (push `(cons ,(pop body) (ensure-list ,(pop body)))
-            where-alist))
-    `(dolist (targets (list ,@(nreverse where-alist)))
-       (dolist (target (cdr targets))
-         (advice-remove target #',symbol)))))
-
-(defmacro +advice-pp-to-prin1! (&rest body)
-  "Define an advice called SYMBOL that map `pp' to `prin1' when called.
-    PLACE is the function to which to add the advice, like in `advice-add'.
-
-    \(fn SYMBOL &rest [PLACES...]\)"
-  `(progn
-     (dolist (target (list ,@body))
-       (advice-add target :around #'+call-fn-with-pp-to-prin1))))
-
-(defmacro defun-call! (symbol args &rest body)
-  "Define a function and optionally apply it with specified arguments.
-
-    \(fn SYMBOL ARGS &optional [DOCSTRING] &optional [:call-with APPLY_ARGS] BODY\)"
-  (declare (indent defun))
-  (let* ((docstring (if (stringp (car body)) (pop body)))
-         (apply-body (if (eq :call-with (car body))
-                         (progn
-                           (cl-assert (eq (pop body) :call-with))
-                           (pop body))
-                       nil)))
-    `(progn
-       (defun ,symbol ,args
-         ,@(if docstring
-               (cons docstring body)
-             body))
-       (apply ',symbol
-              ,(if (listp apply-body)
-                   `(list ,@apply-body)
-                 `(list ,apply-body))))))
-
-
-(defmacro appendq! (sym &rest lists)
-  "Append LISTS to SYM in place."
-  `(setq ,sym (append ,sym ,@lists)))
-
-(defmacro setq! (&rest settings)
-  "A more sensible `setopt' for setting customizable variables.
-
-  This can be used as a drop-in replacement for `setq' and *should* be used
-  instead of `setopt'. Unlike `setq', this triggers custom setters on variables.
-  Unlike `setopt', this won't needlessly pull in dependencies."
-  (macroexp-progn
-   (cl-loop for (var val) on settings by 'cddr
-            collect `(funcall (or (get ',var 'custom-set) #'set-default-toplevel-value)
-                              ',var ,val))))
-
-(defmacro delq! (elt list &optional fetcher)
-  "`delq' ELT from LIST in-place.
-
-  If FETCHER is a function, ELT is used as the key in LIST (an alist)."
-  `(setq ,list (delq ,(if fetcher
-                          `(funcall ,fetcher ,elt ,list)
-                        elt)
-                     ,list)))
-
-(defmacro pushnew! (place &rest values)
-  "Push VALUES sequentially into PLACE, if they aren't already present.
-  This is a variadic `cl-pushnew'."
-  (let ((var (make-symbol "result")))
-    `(dolist (,var (list ,@values) (with-no-warnings ,place))
-       (cl-pushnew ,var ,place :test #'equal))))
-
-(defmacro prependq! (sym &rest lists)
-  "Prepend LISTS to SYM in place."
-  `(setq ,sym (append ,@lists ,sym)))
-
-(defun +call-fn-with-pp-to-prin1 (fn &rest args)
-  "Call FN with ARGS, map `pp' to `prin1' when called."
-  (cl-letf (((symbol-function #'pp) #'prin1)
-            ((symbol-function #'pp-to-string) #'prin1-to-string))
-    (apply fn args)))
-
-(defun +unfill-region (start end)
-  "Replace newline chars in region from START to END by single spaces.
-    This command does the inverse of `fill-region'."
-  (interactive "r")
-  (let ((fill-column most-positive-fixnum))
-    (fill-region start end)))
-
-(defun +temp-buffer-p (buffer)
-  "Return t if BUFFER is temporary."
-  (string-match-p "^ " (buffer-name buffer)))
-
-(defun +num-to-sup-string (num)
-  "Convert NUM to a small string.
-
-    Example: 12 -> \"¹²\""
-  (let ((str (number-to-string num))
-        (superscripts "⁰¹²³⁴⁵⁶⁷⁸⁹"))
-    (mapconcat (lambda (c) (char-to-string (elt superscripts (- c ?0)))) str)))
