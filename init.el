@@ -519,6 +519,7 @@
           "\\*Finder\\*"
           "\\*Kill Ring\\*"
           "\\*Go-Translate\\*"
+          "\\*xref\\*"
 
           bookmark-bmenu-mode
           comint-mode
@@ -1449,9 +1450,9 @@
          (progn
            (pcase (char-to-string peek-ch)
              ("\n" (funcall move-ptr-fn "[^\n]"))
-             ((rx space) (funcall move-ptr-fn "[^[:space:]]\\|[\n]"))
+             ((rx space) (funcall move-ptr-fn "[^[:space:]]\\|\n"))
              ((rx (any "$" "_" alnum)) (funcall move-ptr-fn "[^$_[:alnum:]]"))
-             ((rx punct) (funcall move-ptr-fn "[$_[:alnum:][:space:]]")))
+             ((rx punct) (funcall move-ptr-fn "[$_[:alnum:][:space:]\n]")))
            (funcall move-back-fn))
        (search-failed
         (goto-char
@@ -1480,15 +1481,15 @@
 (use-package emacs
   :bind
   (:map global-map
-   ("C--" . text-scale-decrease)
-   ("C-=" . text-scale-increase)
-   ("C-<backspace>" . +backward-delete-word)
-   ("C-<delete>" . +delete-word)
-   ("C-x q" . save-buffers-kill-terminal)
-   :map input-decode-map
-   ("C-[" . [control-bracketleft])
-   :map ctl-x-map
-   ("C-c" . local-code-map))
+        ("C--" . text-scale-decrease)
+        ("C-=" . text-scale-increase)
+        ("C-<backspace>" . +backward-delete-word)
+        ("C-<delete>" . +delete-word)
+        ("C-x q" . save-buffers-kill-terminal)
+        :map input-decode-map
+        ("C-[" . [control-bracketleft])
+        :map ctl-x-map
+        ("C-c" . local-code-map))
   :init
   (global-unset-key (kbd "C-z")))
 

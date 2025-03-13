@@ -204,7 +204,7 @@ unreadable. Returns the names of envvars that were changed."
 
 (+load-envvars-file (expand-file-name "env" user-emacs-directory))
 
-(defconst dohna-font-pixelsize 21)
+(defconst dohna-font-pixelsize 24)
 (defconst dohna-fonts '((mono . "Donut")
                         (sans . "Donut")
                         (serif . "Donut")
@@ -266,6 +266,8 @@ unreadable. Returns the names of envvars that were changed."
  modus-themes-completions '((matches . (regular))
                             (selection . (regular)))
  modus-themes-common-palette-overrides `((fg-region unspecified)
+                                         (bg-region bg-ochre)
+                                         (cursor magenta)
                                          (fg-completion-match-0 magenta-warmer)
                                          (fg-completion-match-1 cyan)
                                          (fg-completion-match-2 red)
@@ -275,9 +277,6 @@ unreadable. Returns the names of envvars that were changed."
                                          (bg-completion-match-2 bg-red-nuanced)
                                          (bg-completion-match-3 bg-blue-nuanced)
                                          ,@modus-themes-preset-overrides-faint)
- modus-operandi-tinted-palette-overrides '((bg-region bg-ochre)
-                                           (cursor red-faint))
- modus-vivendi-palette-overrides '((cursor magenta))
  modus-vivendi-tinted-palette-overrides '((keyword magenta-warmer)))
 
 
@@ -297,4 +296,4 @@ unreadable. Returns the names of envvars that were changed."
    '(vertico-current ((t :inherit nil :extend nil :underline (:position 1))))))
 
 (add-hook 'enable-theme-functions #'dohna-tweak-theme-faces)
-(load-theme 'modus-vivendi)
+(load-theme 'modus-operandi)
