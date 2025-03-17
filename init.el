@@ -709,6 +709,17 @@
   :ensure t
   :hook (dired-mode . diredfl-mode))
 
+(use-package dired-hacks
+  :ensure t
+  :vc (:url "https://github.com/Fuco1/dired-hacks" :branch "master")
+  :after dired
+  :init
+  (use-package dired-subtree
+    :bind (:map dired-mode-map
+                ("TAB" . dired-subtree-toggle))
+    :config
+    (setq dired-subtree-line-prefix " | ")))
+
 (use-package avy
   :ensure t
   :bind (("C-, ." . avy-goto-char)
