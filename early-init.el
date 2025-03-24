@@ -186,7 +186,7 @@ unreadable. Returns the names of envvars that were changed."
         (signal 'file-error (list "No envvar file exists" file)))
     (with-temp-buffer
       (insert-file-contents file)
-      (when-let (env (read (current-buffer)))
+      (when-let* ((env (read (current-buffer))))
         (let ((tz (getenv-internal "TZ")))
           (setq-default
            process-environment
@@ -197,7 +197,7 @@ unreadable. Returns the names of envvars that were changed."
            shell-file-name
            (or (getenv "SHELL")
                (default-value 'shell-file-name)))
-          (when-let (newtz (getenv-internal "TZ"))
+          (when-let* ((newtz (getenv-internal "TZ")))
             (unless (equal tz newtz)
               (set-time-zone-rule newtz))))
         env))))

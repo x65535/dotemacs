@@ -741,12 +741,14 @@
         aw-ignore-current t)
 
   (defsubst +mode-line-window-name ()
-    (char-to-string
-     (+  (if (mode-line-window-selected-p)
-             #x2775
-           #x245f)
-         (string-to-number
-          (window-parameter (selected-window) 'ace-window-path)))))
+    (if-let* ((winnum (string-to-number
+                      (window-parameter (selected-window) 'ace-window-path))))
+        (char-to-string
+         (+  (if (mode-line-window-selected-p)
+                 #x2775
+               #x245f)
+             winnum))
+        " "))
 
   (setq-default mode-line-format
                 '("%e" mode-line-front-space
@@ -1390,7 +1392,7 @@
     "Toggle to the previous buffer that belongs to current project."
     (interactive "P")
     (unless arg
-      (if-let ((pr (project-current)))
+      (if-let* ((pr (project-current)))
           (switch-to-buffer
            (->> (project--buffer-list pr)
                 (--remove (or (minibufferp it)
@@ -1450,25 +1452,29 @@
 
 (defun +delete-word (&optional dir)
   (interactive)
+  (setq dir (or dir 1))
   (delete-region
    (point)
-   (let* ((forward (> dir 0))
-          (peek-ch (if forward (char-after) (char-before)))
-          (move-ptr-fn (if forward 're-search-forward
-                         're-search-backward))
-          (move-back-fn (if forward 'left-char 'right-char)))
-     (condition-case nil
-         (progn
-           (pcase (char-to-string peek-ch)
-             ("\n" (funcall move-ptr-fn "[^\n]"))
-             ((rx space) (funcall move-ptr-fn "[^[:space:]]\\|\n"))
-             ((rx (any "$" "_" alnum)) (funcall move-ptr-fn "[^$_[:alnum:]]"))
-             ((rx punct) (funcall move-ptr-fn "[$_[:alnum:][:space:]\n]")))
-           (funcall move-back-fn))
-       (search-failed
-        (goto-char
-         (if forward (point-max) (point-min)))))
-     (point))))
+   (if (region-active-p)
+       (mark)
+     (let* ((forward (> dir 0))
+            (peek-ch-fn (lambda () (char-to-string
+                               (if forward (char-after) (char-before)))))
+            (move-ptr-fn (if forward 're-search-forward
+                           're-search-backward))
+            (move-back-fn (if forward 'left-char 'right-char)))
+       (condition-case nil
+           (progn
+             (pcase (funcall peek-ch-fn)
+               ("\n" (funcall move-ptr-fn "[^\n]"))
+               ((rx (any "$" "_" alnum)) (funcall move-ptr-fn "[^$_[:alnum:]]"))
+               ((rx space) (funcall move-ptr-fn "[^[:space:]]\\|\n"))
+               ((rx punct) (funcall move-ptr-fn "[$_[:alnum:][:space:]\n]")))
+             (funcall move-back-fn))
+         (search-failed
+          (goto-char
+           (if forward (point-max) (point-min)))))
+       (point)))))
 
 (defun +backward-delete-word ()
   (interactive)
