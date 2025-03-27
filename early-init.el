@@ -267,7 +267,6 @@ unreadable. Returns the names of envvars that were changed."
                             (selection . (regular)))
  modus-themes-common-palette-overrides `((fg-region unspecified)
                                          (bg-region bg-ochre)
-                                         (cursor magenta)
                                          (fg-completion-match-0 magenta-warmer)
                                          (fg-completion-match-1 cyan)
                                          (fg-completion-match-2 red)
@@ -293,7 +292,9 @@ unreadable. Returns the names of envvars that were changed."
    '(org-block ((t :inherit fixed-pitch-serif)))
    '(org-checkbox ((t :inherit fixed-pitch :background unspecified :box nil)))
    '(org-latex-and-related ((t :inherit fixed-pitch-serif)))
-   '(vertico-current ((t :inherit nil :extend nil :underline (:position 1))))))
+   '(vertico-current ((t :inherit nil :extend nil :underline (:position 1))))
+   '(meow-normal-cursor ((t :background "#698cdb")))
+   '(meow-insert-cursor ((t :background "#e36fa7")))))
 
 (add-hook 'enable-theme-functions #'dohna-tweak-theme-faces)
 (load-theme 'modus-operandi)

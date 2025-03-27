@@ -520,6 +520,7 @@
           "\\*Kill Ring\\*"
           "\\*Go-Translate\\*"
           "\\*xref\\*"
+          "\\*Buffer List\\*"
 
           bookmark-bmenu-mode
           comint-mode
@@ -1503,6 +1504,7 @@
         ("C-<backspace>" . +backward-delete-word)
         ("C-<delete>" . +delete-word)
         ("C-x q" . save-buffers-kill-terminal)
+        ("C-x C-b" . electric-buffer-list)
         :map input-decode-map
         ("C-[" . [control-bracketleft])
         :map ctl-x-map
@@ -1540,7 +1542,8 @@
   meow-beacon-mode
   :config
   (setq meow-expand-exclude-mode-list nil
-        meow-expand-hint-remove-delay 4.0)
+        meow-expand-hint-remove-delay 4.0
+        meow-cursor-type-insert 'box)
   (setq-default meow-replace-state-name-list '((normal . "N")
                                                (motion . "M")
                                                (keypad . "K")
